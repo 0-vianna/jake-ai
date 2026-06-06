@@ -9,6 +9,7 @@ import {
   FolderKanban,
   Home,
   LayoutDashboard,
+  Layers3,
   MemoryStick,
   MessageSquare,
   PanelLeft,
@@ -26,6 +27,7 @@ import type { ModuleId, NavItem } from "@/lib/types";
 export const navItems: NavItem[] = [
   { id: "home", label: "Inicio", icon: Home },
   { id: "chat", label: "Chat", icon: MessageSquare },
+  { id: "workspace", label: "Workspace Livre", icon: Layers3 },
   { id: "projects", label: "Projetos", icon: FolderKanban },
   { id: "files", label: "Arquivos", icon: Files },
   { id: "code", label: "Code Workspace", icon: Code2 },

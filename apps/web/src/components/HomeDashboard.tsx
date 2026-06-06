@@ -9,6 +9,7 @@ import {
   Gauge,
   Globe2,
   LayoutDashboard,
+  Layers3,
   MessageCircle,
   MonitorUp,
   PenLine,
@@ -55,6 +56,7 @@ type RuntimeSettings = {
 };
 
 const quickCards: Array<{ label: string; detail: string; icon: LucideIcon; target: ModuleId }> = [
+  { label: "Workspace", detail: "Mesa livre com paineis moveis", icon: Layers3, target: "workspace" },
   { label: "Codigo", detail: "Projetos, bugs e terminal", icon: Code2, target: "code" },
   { label: "Chat", detail: "OpenAI, web e memoria", icon: MessageCircle, target: "chat" },
   { label: "Arquivos", detail: "Ler, buscar e resumir", icon: PenLine, target: "files" },

@@ -12,6 +12,7 @@ class UserOut(BaseModel):
     role: str
     theme: str
     is_active: bool
+    email_verified: bool
 
     model_config = {"from_attributes": True}
 
@@ -33,6 +34,21 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=6)
     role: str = "user"
+
+
+class UserRegister(BaseModel):
+    name: str
+    username: str
+    email: EmailStr
+    password: str = Field(min_length=8)
+
+
+class RegisterResponse(BaseModel):
+    ok: bool = True
+    message: str
+    email_verification_required: bool
+    delivery: str
+    verify_url: str | None = None
 
 
 class ChatRequest(BaseModel):
@@ -176,3 +192,28 @@ class AutomationCreate(BaseModel):
     trigger: str = ""
     actions_json: str = "[]"
     active: bool = True
+
+
+class WorkspaceLayoutIn(BaseModel):
+    name: str
+    description: str = ""
+    state_json: str = "{}"
+    is_default: bool = False
+
+
+class WorkspaceLayoutOut(BaseModel):
+    id: int
+    name: str
+    description: str
+    state_json: str
+    is_default: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class WorkspaceActionIn(BaseModel):
+    action_type: str
+    payload_json: str = "{}"
+    source: str = "ui"

@@ -4,7 +4,9 @@ import math
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
+from urllib.request import urlopen
 
 
 @dataclass
@@ -57,6 +59,7 @@ class NativeHandControlService:
         with self._lock:
             self._running = False
             self._thread = None
+            self._error = None
             self._state = GestureState(gesture="Parado", action="Controle nativo desligado")
         return self.status()
 
@@ -82,23 +85,22 @@ class NativeHandControlService:
             import mediapipe as mp
             import pyautogui
 
-            pyautogui.FAILSAFE = True
+            pyautogui.FAILSAFE = False
             pyautogui.PAUSE = 0
             screen_w, screen_h = pyautogui.size()
             cap = cv2.VideoCapture(self._camera_index, cv2.CAP_DSHOW)
             if not cap.isOpened():
+                cap.release()
+                cap = cv2.VideoCapture(self._camera_index)
+            if not cap.isOpened():
                 raise RuntimeError("Nao consegui abrir a camera pelo controlador nativo.")
 
-            mp_hands = mp.solutions.hands
-            hands = mp_hands.Hands(
-                static_image_mode=False,
-                max_num_hands=1,
-                min_detection_confidence=0.62,
-                min_tracking_confidence=0.55,
-            )
+            hands = create_hand_landmarker()
             previous_center: tuple[float, float] | None = None
             previous_mouse: tuple[float, float] | None = None
             last_action_at: dict[str, float] = {}
+            gesture_candidate = ""
+            gesture_streak = 0
             last_frame = time.perf_counter()
 
             while not self._stop_event.is_set():
@@ -110,21 +112,22 @@ class NativeHandControlService:
 
                 frame = cv2.flip(frame, 1)
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                result = hands.process(rgb)
                 now = time.perf_counter()
+                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+                result = hands.detect_for_video(mp_image, int(now * 1000))
                 fps = int(1 / max(now - last_frame, 0.001))
                 last_frame = now
 
-                if not result.multi_hand_landmarks:
+                if not result.hand_landmarks:
                     previous_center = None
                     self._set_state("Aguardando mao", "Nenhuma", 0.0, fps)
                     continue
 
-                landmarks = result.multi_hand_landmarks[0].landmark
+                landmarks = result.hand_landmarks[0]
                 points = [(item.x, item.y, item.z) for item in landmarks]
                 confidence = 86.0
-                if result.multi_handedness:
-                    confidence = float(result.multi_handedness[0].classification[0].score * 100)
+                if result.handedness and result.handedness[0]:
+                    confidence = float(result.handedness[0][0].score * 100)
 
                 center = palm_center(points)
                 target_x = min(screen_w - 1, max(0, center[0] * screen_w))
@@ -136,6 +139,11 @@ class NativeHandControlService:
                 previous_mouse = (target_x, target_y)
 
                 gesture = detect_native_gesture(points)
+                if gesture == gesture_candidate:
+                    gesture_streak += 1
+                else:
+                    gesture_candidate = gesture
+                    gesture_streak = 1
                 action = "Movimento da mao -> mouse"
 
                 if previous_center:
@@ -146,7 +154,9 @@ class NativeHandControlService:
                         action = "Arrastar mao para cima/baixo -> scroll"
                 previous_center = center
 
-                executed = execute_gesture_action(pyautogui, gesture, last_action_at, now)
+                executed = None
+                if gesture_streak >= 3:
+                    executed = execute_gesture_action(pyautogui, gesture, last_action_at, now)
                 if executed:
                     action = executed
                     self._push_history(gesture, action)
@@ -224,20 +234,25 @@ def detect_native_gesture(points: list[tuple[float, float, float]]) -> str:
     ring_tip, ring_pip = points[16], points[14]
     pinky_tip, pinky_pip = points[20], points[18]
     wrist = points[0]
+    middle_mcp = points[9]
+    palm_size = max(distance(wrist, middle_mcp), 0.08)
+    flex_margin = max(0.02, palm_size * 0.18)
 
-    index_up = index_tip[1] < index_pip[1] - 0.025
-    middle_up = middle_tip[1] < middle_pip[1] - 0.025
-    ring_up = ring_tip[1] < ring_pip[1] - 0.025
-    pinky_up = pinky_tip[1] < pinky_pip[1] - 0.025
+    index_up = index_tip[1] < index_pip[1] - flex_margin
+    middle_up = middle_tip[1] < middle_pip[1] - flex_margin
+    ring_up = ring_tip[1] < ring_pip[1] - flex_margin
+    pinky_up = pinky_tip[1] < pinky_pip[1] - flex_margin
     folded_count = [not index_up, not middle_up, not ring_up, not pinky_up].count(True)
     pinch_distance = distance(thumb_tip, index_tip)
-    thumb_vertical = abs(thumb_tip[1] - wrist[1]) > 0.12 and abs(thumb_tip[1] - thumb_mcp[1]) > 0.08
+    pinch_threshold = max(0.04, palm_size * 0.48)
+    thumb_vertical = abs(thumb_tip[1] - wrist[1]) > palm_size * 0.55 and abs(thumb_tip[1] - thumb_mcp[1]) > palm_size * 0.42
+    fist_compact = all(distance(points[item], wrist) < palm_size * 1.45 for item in (8, 12, 16, 20))
 
-    if pinch_distance < 0.055:
+    if pinch_distance < pinch_threshold and not middle_up:
         return "Pinca"
     if index_up and middle_up and not ring_up and not pinky_up:
         return "Dois dedos"
-    if folded_count >= 4 and not thumb_vertical:
+    if fist_compact or (folded_count >= 4 and not thumb_vertical):
         return "Punho fechado"
     if folded_count >= 3 and thumb_vertical and thumb_tip[1] < wrist[1]:
         return "Joinha pra cima"
@@ -261,3 +276,33 @@ def distance(a: tuple[float, float, float], b: tuple[float, float, float]) -> fl
 
 
 native_hand_control_service = NativeHandControlService()
+
+
+MODEL_URL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
+MODEL_PATH = Path(__file__).resolve().parents[1] / "vision" / "models" / "hand_landmarker.task"
+
+
+def create_hand_landmarker() -> Any:
+    from mediapipe.tasks.python import vision
+    from mediapipe.tasks.python.core.base_options import BaseOptions
+    from mediapipe.tasks.python.vision.core.vision_task_running_mode import VisionTaskRunningMode
+
+    model_path = ensure_model_file()
+    options = vision.HandLandmarkerOptions(
+        base_options=BaseOptions(model_asset_path=str(model_path)),
+        running_mode=VisionTaskRunningMode.VIDEO,
+        num_hands=1,
+        min_hand_detection_confidence=0.55,
+        min_hand_presence_confidence=0.45,
+        min_tracking_confidence=0.45,
+    )
+    return vision.HandLandmarker.create_from_options(options)
+
+
+def ensure_model_file() -> Path:
+    MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if MODEL_PATH.exists() and MODEL_PATH.stat().st_size > 0:
+        return MODEL_PATH
+    with urlopen(MODEL_URL, timeout=30) as response:
+        MODEL_PATH.write_bytes(response.read())
+    return MODEL_PATH

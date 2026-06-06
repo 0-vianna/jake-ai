@@ -20,6 +20,7 @@ import { SettingsView } from "./SettingsView";
 import { navItems, Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 import { WhatsAppView } from "./WhatsAppView";
+import { WorkspacePage } from "./workspace/WorkspacePage";
 import type { AuthState, ModuleId } from "@/lib/types";
 
 const STORAGE_KEY = "jake-auth-v1";
@@ -208,6 +209,7 @@ export function AppShell() {
         <main data-scrollable="true" className="scrollbar-thin min-h-0 flex-1 overflow-y-auto p-3 pb-20 md:p-4">
           {active === "home" ? <HomeDashboard user={auth.user} token={auth.token} onOpen={setActive} mode={mode} onModeChange={setMode} onCommand={() => setCommandOpen(true)} /> : null}
           {active === "chat" ? <ChatView token={auth.token} initialMessage={commandDraft} initialMode={mode} onModeChange={setMode} /> : null}
+          {active === "workspace" ? <WorkspacePage token={auth.token} onOpenModule={(module) => setActive(module as ModuleId)} onOpenCommand={() => setCommandOpen(true)} /> : null}
           {active === "code" ? <CodeWorkspaceView token={auth.token} /> : null}
           {active === "files" ? <FilesView token={auth.token} /> : null}
           {active === "projects" ? <ProjectsView token={auth.token} /> : null}
@@ -230,7 +232,7 @@ export function AppShell() {
               onFocusChange={setFocus}
             />
           ) : null}
-          {!["home", "chat", "code", "files", "projects", "memory", "users", "logs", "automations", "whatsapp", "screen", "camera", "finance", "settings", "models"].includes(active) ? <ModuleView id={active} token={auth.token} /> : null}
+          {!["home", "chat", "workspace", "code", "files", "projects", "memory", "users", "logs", "automations", "whatsapp", "screen", "camera", "finance", "settings", "models"].includes(active) ? <ModuleView id={active} token={auth.token} /> : null}
         </main>
       </div>
       {!focus ? <MobileNav active={active} onChange={setActive} /> : null}

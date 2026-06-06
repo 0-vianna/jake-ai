@@ -1,11 +1,11 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { LockKeyhole, LogIn, ShieldCheck, Sparkles } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { motion } from "framer-motion";
 
-import { login } from "@/lib/api";
+import { login, register, verifyEmail } from "@/lib/api";
 import type { AuthState } from "@/lib/types";
 
 type LoginScreenProps = {
@@ -14,25 +14,53 @@ type LoginScreenProps = {
 
 const trustCards: Array<{ label: string; icon: LucideIcon }> = [
   { label: "Login seguro", icon: ShieldCheck },
-  { label: "Memória própria", icon: Sparkles },
+  { label: "Memoria propria", icon: Sparkles },
   { label: "Controle local", icon: LockKeyhole }
 ];
 
 export function LoginScreen({ onLogin }: LoginScreenProps) {
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("admin123");
+  const [isRegisterMode, setIsRegisterMode] = useState(false);
+  const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [verifyUrl, setVerifyUrl] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const token = new URLSearchParams(window.location.search).get("verify_email");
+    if (!token) return;
+    setLoading(true);
+    verifyEmail(token)
+      .then((result) => {
+        setSuccess(result.message);
+        window.history.replaceState({}, "", window.location.pathname);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : "Nao consegui verificar o email agora."))
+      .finally(() => setLoading(false));
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
     setError("");
+    setSuccess("");
+    setVerifyUrl("");
     try {
-      const auth = await login(username, password);
-      onLogin(auth);
+      if (isRegisterMode) {
+        const result = await register({ name, username, email, password });
+        setSuccess(result.message);
+        setVerifyUrl(result.verify_url ?? "");
+        setIsRegisterMode(false);
+        setPassword("");
+      } else {
+        const auth = await login(username, password);
+        onLogin(auth);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Não consegui entrar agora.");
+      setError(err instanceof Error ? err.message : "Nao consegui concluir agora.");
     } finally {
       setLoading(false);
     }
@@ -53,7 +81,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
           <div className="max-w-xl space-y-4">
             <h1 className="text-4xl font-semibold leading-tight md:text-6xl">Jake IA</h1>
             <p className="text-lg leading-8 text-muted dark:text-stone-300">
-              Uma central pessoal para conversar, programar, organizar arquivos, controlar finanças e preparar automações locais com segurança.
+              Uma central pessoal para conversar, programar, organizar arquivos, controlar financas e preparar automacoes locais com seguranca.
             </p>
           </div>
           <div className="grid max-w-xl gap-3 sm:grid-cols-3">
@@ -75,17 +103,47 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
         >
           <div className="mb-6">
             <p className="text-sm font-medium text-accent">Acesso local</p>
-            <h2 className="mt-2 text-2xl font-semibold">Entrar no Jake</h2>
+            <h2 className="mt-2 text-2xl font-semibold">{isRegisterMode ? "Criar conta no Jake" : "Entrar no Jake"}</h2>
           </div>
+
+          {isRegisterMode ? (
+            <label className="mb-4 block">
+              <span className="mb-2 block text-sm text-muted dark:text-stone-300">Nome</span>
+              <input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                className="h-11 w-full rounded-panel border border-line bg-cream px-3 outline-none transition focus:border-accent dark:border-stone-700 dark:bg-night"
+                autoComplete="name"
+                required
+              />
+            </label>
+          ) : null}
+
           <label className="mb-4 block">
-            <span className="mb-2 block text-sm text-muted dark:text-stone-300">Usuário ou email</span>
+            <span className="mb-2 block text-sm text-muted dark:text-stone-300">{isRegisterMode ? "Usuario" : "Usuario ou email"}</span>
             <input
               value={username}
               onChange={(event) => setUsername(event.target.value)}
               className="h-11 w-full rounded-panel border border-line bg-cream px-3 outline-none transition focus:border-accent dark:border-stone-700 dark:bg-night"
               autoComplete="username"
+              required
             />
           </label>
+
+          {isRegisterMode ? (
+            <label className="mb-4 block">
+              <span className="mb-2 block text-sm text-muted dark:text-stone-300">Email</span>
+              <input
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                type="email"
+                className="h-11 w-full rounded-panel border border-line bg-cream px-3 outline-none transition focus:border-accent dark:border-stone-700 dark:bg-night"
+                autoComplete="email"
+                required
+              />
+            </label>
+          ) : null}
+
           <label className="mb-4 block">
             <span className="mb-2 block text-sm text-muted dark:text-stone-300">Senha</span>
             <input
@@ -93,20 +151,48 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
               onChange={(event) => setPassword(event.target.value)}
               type="password"
               className="h-11 w-full rounded-panel border border-line bg-cream px-3 outline-none transition focus:border-accent dark:border-stone-700 dark:bg-night"
-              autoComplete="current-password"
+              autoComplete={isRegisterMode ? "new-password" : "current-password"}
+              required
             />
           </label>
+
           {error ? <p className="mb-4 rounded-panel bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-200">{error}</p> : null}
+          {success ? (
+            <div className="mb-4 rounded-panel bg-emerald-50 p-3 text-sm text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
+              <p>{success}</p>
+              {verifyUrl ? (
+                <a className="mt-2 block font-medium underline" href={verifyUrl}>
+                  Abrir link de verificacao
+                </a>
+              ) : null}
+            </div>
+          ) : null}
+
           <button
             type="submit"
             disabled={loading}
             className="flex h-11 w-full items-center justify-center gap-2 rounded-panel bg-accent px-4 font-medium text-white shadow-soft transition hover:bg-orange-700"
           >
             <LogIn className="h-4 w-4" />
-            {loading ? "Entrando..." : "Entrar"}
+            {loading ? "Processando..." : isRegisterMode ? "Criar conta" : "Entrar"}
           </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setIsRegisterMode((current) => !current);
+              setError("");
+              setSuccess("");
+              setVerifyUrl("");
+              setPassword("");
+            }}
+            className="mt-4 text-sm text-accent underline"
+          >
+            {isRegisterMode ? "Ja tenho conta" : "Criar nova conta"}
+          </button>
+
           <p className="mt-4 text-xs leading-5 text-muted dark:text-stone-400">
-            Desenvolvimento: usuário <strong>admin</strong>, senha <strong>admin123</strong>. Troque no primeiro uso real.
+            Conta admin local preparada: <strong>jprvianna</strong>. As credenciais nao aparecem preenchidas por padrao.
           </p>
         </motion.form>
       </div>

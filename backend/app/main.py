@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database.session import init_db
-from app.routes import auth, chat, code_workspace, files, finance, hand_control, logs, memory, modules, projects, settings as settings_routes, tools, users, whatsapp
+from app.routes import auth, chat, code_workspace, files, finance, hand_control, logs, memory, modules, projects, settings as settings_routes, tools, users, whatsapp, workspace
 
 
 app = FastAPI(title="Jake API", version="0.1.0")
@@ -46,6 +46,7 @@ app.include_router(logs.router, prefix="/api")
 app.include_router(modules.router, prefix="/api")
 app.include_router(tools.router, prefix="/api")
 app.include_router(whatsapp.router, prefix="/api")
+app.include_router(workspace.router, prefix="/api")
 
 
 @app.websocket("/ws/logs")

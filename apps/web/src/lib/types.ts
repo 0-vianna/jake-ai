@@ -8,6 +8,7 @@ export type User = {
   role: "admin" | "user" | string;
   theme: "light" | "dark" | string;
   is_active: boolean;
+  email_verified: boolean;
 };
 
 export type AuthState = {
@@ -18,6 +19,7 @@ export type AuthState = {
 export type ModuleId =
   | "home"
   | "chat"
+  | "workspace"
   | "projects"
   | "files"
   | "code"
@@ -82,4 +84,3 @@ export type FinanceSummary = {
     suggestion: string;
   };
 };
-

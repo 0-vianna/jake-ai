@@ -23,6 +23,9 @@ class User(Base, TimestampMixin):
     permissions = Column(Text, default="{}", nullable=False)
     theme = Column(String(20), default="light", nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
+    email_verified = Column(Boolean, default=False, nullable=False)
+    verification_token = Column(String(255), nullable=True)
+    verification_sent_at = Column(DateTime, nullable=True)
 
     conversations = relationship("Conversation", back_populates="user")
 
@@ -234,3 +237,63 @@ class AuditLog(Base, TimestampMixin):
     target = Column(Text, nullable=True)
     details = Column(Text, default="", nullable=False)
     level = Column(String(30), default="info", nullable=False)
+
+
+class WorkspaceLayout(Base, TimestampMixin):
+    __tablename__ = "workspace_layouts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    name = Column(String(160), nullable=False)
+    description = Column(Text, default="", nullable=False)
+    state_json = Column(Text, default="{}", nullable=False)
+    is_default = Column(Boolean, default=False, nullable=False)
+
+
+class WorkspacePanel(Base, TimestampMixin):
+    __tablename__ = "workspace_panels"
+
+    id = Column(Integer, primary_key=True, index=True)
+    layout_id = Column(Integer, ForeignKey("workspace_layouts.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    panel_type = Column(String(80), nullable=False)
+    title = Column(String(160), nullable=False)
+    position_x = Column(Float, default=0.0, nullable=False)
+    position_y = Column(Float, default=0.0, nullable=False)
+    width = Column(Float, default=420.0, nullable=False)
+    height = Column(Float, default=320.0, nullable=False)
+    z_index = Column(Integer, default=1, nullable=False)
+    content_ref = Column(Text, nullable=True)
+    state_json = Column(Text, default="{}", nullable=False)
+
+
+class WorkspaceConnection(Base, TimestampMixin):
+    __tablename__ = "workspace_connections"
+
+    id = Column(Integer, primary_key=True, index=True)
+    layout_id = Column(Integer, ForeignKey("workspace_layouts.id"), nullable=False, index=True)
+    source_panel_id = Column(Integer, ForeignKey("workspace_panels.id"), nullable=False)
+    target_panel_id = Column(Integer, ForeignKey("workspace_panels.id"), nullable=False)
+    label = Column(String(120), default="", nullable=False)
+
+
+class WorkspaceAction(Base, TimestampMixin):
+    __tablename__ = "workspace_actions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    action_type = Column(String(80), nullable=False)
+    payload_json = Column(Text, default="{}", nullable=False)
+    source = Column(String(40), default="ui", nullable=False)
+
+
+class GestureBinding(Base, TimestampMixin):
+    __tablename__ = "gesture_bindings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    gesture_name = Column(String(120), nullable=False)
+    action_type = Column(String(120), nullable=False)
+    action_payload_json = Column(Text, default="{}", nullable=False)
+    enabled = Column(Boolean, default=True, nullable=False)
+    sensitivity = Column(Integer, default=50, nullable=False)

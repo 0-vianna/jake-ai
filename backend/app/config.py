@@ -20,6 +20,15 @@ class Settings(BaseSettings):
     voice_enabled: bool = True
     screen_control_enabled: bool = True
     allowed_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    app_base_url: str = "http://127.0.0.1:3000"
+    require_verified_email: bool = False
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_from_email: str | None = None
+    smtp_from_name: str = "Jake IA"
+    smtp_use_tls: bool = True
 
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),

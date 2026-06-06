@@ -56,10 +56,10 @@ if not exist "node_modules" (
 )
 
 echo.
-echo Iniciando backend em http://127.0.0.1:8000 ...
-start "Jake Backend" cmd /k "cd /d ""%ROOT%backend"" && ""..\.venv\Scripts\python.exe"" -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload"
+echo Iniciando backend em http://0.0.0.0:8000 ...
+start "Jake Backend" cmd /k "cd /d ""%ROOT%backend"" && ""..\.venv\Scripts\python.exe"" -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
-echo Iniciando frontend em http://127.0.0.1:3000 ...
+echo Iniciando frontend em http://0.0.0.0:3000 ...
 start "Jake Web" cmd /k "cd /d ""%ROOT%"" && npm run dev:web"
 
 echo.
@@ -69,7 +69,7 @@ start "" "http://127.0.0.1:3000"
 
 echo.
 echo Jake iniciada.
-echo Login de desenvolvimento: admin / admin123
+echo Conta admin local preparada: jprvianna
 echo Para parar, feche as janelas "Jake Backend" e "Jake Web".
 echo.
 pause

@@ -1,13 +1,13 @@
 "use client";
 
-import { Bot, Camera, Home, MessageSquare, Settings, Wallet } from "lucide-react";
+import { Bot, Camera, Home, Layers3, Settings, Wallet } from "lucide-react";
 import clsx from "clsx";
 
 import type { ModuleId, NavItem } from "@/lib/types";
 
 const mobileItems: NavItem[] = [
   { id: "home", label: "Inicio", icon: Home },
-  { id: "chat", label: "Chat", icon: MessageSquare },
+  { id: "workspace", label: "Livre", icon: Layers3 },
   { id: "finance", label: "Financas", icon: Wallet },
   { id: "camera", label: "Gestos", icon: Camera },
   { id: "models", label: "IA", icon: Bot },

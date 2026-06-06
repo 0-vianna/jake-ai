@@ -19,10 +19,10 @@ Para abrir como aplicativo de computador:
 start_jake_desktop.bat
 ```
 
-Login de desenvolvimento:
+Conta admin local:
 
-- Usuario: `admin`
-- Senha: `admin123`
+- Usuario: `jprvianna`
+- Senha: `Joao@Jake2026`
 
 ## Stack
 
@@ -50,7 +50,7 @@ Modelos padrao:
 - Segunda, terceira e demais mensagens na mesma conversa funcionando.
 - Anexos de texto/imagem no chat.
 - Captura de tela enviada para analise visual.
-- Microfone no chat via Web Speech API do navegador.
+- Microfone no chat via Web Speech API do navegador, com envio por voz e resposta falada.
 - Busca web do backend para perguntas atuais.
 - Hora/data local pelo backend.
 - Exemplo: "Qual o proximo jogo do Galo?" usa busca web e fontes.

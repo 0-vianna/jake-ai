@@ -8,10 +8,17 @@ import type {
   User
 } from "./types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api";
+function getApiUrl() {
+  if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+  if (typeof window !== "undefined") {
+    const protocol = window.location.protocol === "https:" ? "https:" : "http:";
+    return `${protocol}//${window.location.hostname}:8000/api`;
+  }
+  return "http://127.0.0.1:8000/api";
+}
 
 async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
+  const response = await fetch(`${getApiUrl()}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -28,7 +35,7 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
 }
 
 export async function requestNoContent(path: string, options: RequestInit = {}, token?: string): Promise<void> {
-  const response = await fetch(`${API_URL}${path}`, {
+  const response = await fetch(`${getApiUrl()}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -49,6 +56,33 @@ export async function login(username: string, password: string): Promise<AuthSta
     body: JSON.stringify({ username, password })
   });
   return { token: result.access_token, user: result.user };
+}
+
+export async function register(payload: {
+  name: string;
+  username: string;
+  email: string;
+  password: string;
+}): Promise<{
+  ok: boolean;
+  message: string;
+  email_verification_required: boolean;
+  delivery: string;
+  verify_url?: string | null;
+}> {
+  return request("/auth/register", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function verifyEmail(token: string): Promise<{
+  ok: boolean;
+  message: string;
+  email_verification_required: boolean;
+  delivery: string;
+}> {
+  return request(`/auth/verify-email?token=${encodeURIComponent(token)}`);
 }
 
 export async function getMe(token: string): Promise<User> {
@@ -345,4 +379,48 @@ export async function searchPersonalFiles(
   query: string
 ): Promise<{ query: string; root: string; visited?: number; limited?: boolean; items: Array<{ name: string; path: string; size: number; modified_at: number; mime: string | null; snippet: string }> }> {
   return request(`/files/search?root_id=${encodeURIComponent(rootId)}&q=${encodeURIComponent(query)}`, {}, token);
+}
+
+export type WorkspaceLayoutRecord = {
+  id: number;
+  name: string;
+  description: string;
+  state_json: string;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function listWorkspaceLayouts(token: string): Promise<WorkspaceLayoutRecord[]> {
+  return request("/workspace/layouts", {}, token);
+}
+
+export async function getDefaultWorkspaceLayout(token: string): Promise<WorkspaceLayoutRecord | null> {
+  return request("/workspace/layouts/default", {}, token);
+}
+
+export async function createWorkspaceLayout(
+  token: string,
+  payload: { name: string; description?: string; state_json: string; is_default?: boolean }
+): Promise<WorkspaceLayoutRecord> {
+  return request("/workspace/layouts", { method: "POST", body: JSON.stringify(payload) }, token);
+}
+
+export async function updateWorkspaceLayout(
+  token: string,
+  id: number,
+  payload: { name: string; description?: string; state_json: string; is_default?: boolean }
+): Promise<WorkspaceLayoutRecord> {
+  return request(`/workspace/layouts/${id}`, { method: "PUT", body: JSON.stringify(payload) }, token);
+}
+
+export async function deleteWorkspaceLayout(token: string, id: number): Promise<void> {
+  return requestNoContent(`/workspace/layouts/${id}`, { method: "DELETE" }, token);
+}
+
+export async function recordWorkspaceAction(
+  token: string,
+  payload: { action_type: string; payload_json?: string; source?: string }
+): Promise<{ ok: boolean; id: number }> {
+  return request("/workspace/actions", { method: "POST", body: JSON.stringify(payload) }, token);
 }

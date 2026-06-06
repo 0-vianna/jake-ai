@@ -28,6 +28,7 @@ import {
   type ChatAttachment,
   type NativeHandControlStatus
 } from "@/lib/api";
+import { createPtBrUtterance, ensureMicrophonePermission, getSpeechRecognitionCtor, type BrowserSpeechRecognition, type SpeechRecognitionEventLike } from "@/lib/speech";
 
 type CameraViewProps = {
   token: string;
@@ -45,32 +46,6 @@ type HandLandmarkerLike = {
     handedness?: Array<Array<{ score?: number }>>;
   };
 };
-
-type BrowserSpeechRecognition = {
-  lang: string;
-  continuous: boolean;
-  interimResults: boolean;
-  start: () => void;
-  stop: () => void;
-  abort?: () => void;
-  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-  onerror: ((event: { error?: string }) => void) | null;
-  onend: (() => void) | null;
-};
-
-type SpeechRecognitionEventLike = {
-  resultIndex: number;
-  results: ArrayLike<{
-    isFinal: boolean;
-    0: { transcript: string };
-  }>;
-};
-
-type SpeechWindow = Window &
-  typeof globalThis & {
-    SpeechRecognition?: new () => BrowserSpeechRecognition;
-    webkitSpeechRecognition?: new () => BrowserSpeechRecognition;
-  };
 
 const HAND_CONNECTIONS = [
   [0, 1], [1, 2], [2, 3], [3, 4],
@@ -321,6 +296,10 @@ export function CameraView({ token }: CameraViewProps) {
       setNativeStatus(status);
       window.dispatchEvent(new CustomEvent("jake:indicator", { detail: { camera: true } }));
       window.dispatchEvent(new CustomEvent("jake:notify", { detail: { title: "Controle nativo", body: "Gestos controlando mouse e teclado do Windows." } }));
+      setSpeechError("");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Nao consegui ativar o controle nativo.";
+      setSpeechError(message);
     } finally {
       setNativeLoading(false);
     }
@@ -332,6 +311,9 @@ export function CameraView({ token }: CameraViewProps) {
       const status = await stopNativeHandControl(token);
       setNativeStatus(status);
       if (!active) window.dispatchEvent(new CustomEvent("jake:indicator", { detail: { camera: false } }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Nao consegui parar o controle nativo.";
+      setSpeechError(message);
     } finally {
       setNativeLoading(false);
     }
@@ -392,12 +374,18 @@ export function CameraView({ token }: CameraViewProps) {
     window.dispatchEvent(new CustomEvent("jake:indicator", { detail: { voice: false, thinking: false } }));
   }
 
-  function startVoiceTurn() {
+  async function startVoiceTurn() {
     if (!visualActiveRef.current || visualListening || visualSpeaking) return;
-    const speechWindow = window as SpeechWindow;
-    const SpeechRecognition = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
+    const SpeechRecognition = getSpeechRecognitionCtor();
     if (!SpeechRecognition) {
       setSpeechError("Reconhecimento de voz indisponivel neste navegador. Use Chrome ou Edge.");
+      return;
+    }
+
+    try {
+      await ensureMicrophonePermission();
+    } catch (err) {
+      setSpeechError(err instanceof Error ? err.message : "Nao consegui liberar o microfone.");
       return;
     }
 
@@ -459,23 +447,25 @@ export function CameraView({ token }: CameraViewProps) {
     }
   }
 
-  function speakVisualReply(text: string) {
+  async function speakVisualReply(text: string) {
     if (typeof window.speechSynthesis === "undefined") {
       if (visualActiveRef.current) globalThis.setTimeout(() => startVoiceTurn(), 250);
       return;
     }
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "pt-BR";
-    utterance.rate = 1;
-    utterance.pitch = 0.95;
-    utterance.onstart = () => setVisualSpeaking(true);
+    const utterance = await createPtBrUtterance(text);
+    utterance.onstart = () => {
+      setVisualSpeaking(true);
+      window.dispatchEvent(new CustomEvent("jake:indicator", { detail: { voice: true } }));
+    };
     utterance.onend = () => {
       setVisualSpeaking(false);
+      window.dispatchEvent(new CustomEvent("jake:indicator", { detail: { voice: false } }));
       if (visualActiveRef.current) globalThis.setTimeout(() => startVoiceTurn(), 300);
     };
     utterance.onerror = () => {
       setVisualSpeaking(false);
+      window.dispatchEvent(new CustomEvent("jake:indicator", { detail: { voice: false } }));
       if (visualActiveRef.current) globalThis.setTimeout(() => startVoiceTurn(), 300);
     };
     window.speechSynthesis.speak(utterance);

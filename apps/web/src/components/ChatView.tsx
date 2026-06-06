@@ -1,10 +1,11 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Copy, FileText, Loader2, Mic, MicOff, MonitorUp, Paperclip, Send, Sparkles, Trash2, X } from "lucide-react";
+import { Copy, FileText, Loader2, Mic, MicOff, MonitorUp, Paperclip, Send, Sparkles, Trash2, Volume2, VolumeX, X } from "lucide-react";
 import { motion } from "framer-motion";
 
 import { deleteConversation, listConversations, listMessages, sendChat, type ChatAttachment } from "@/lib/api";
+import { createPtBrUtterance, ensureMicrophonePermission, getSpeechRecognitionCtor, type BrowserSpeechRecognition, type SpeechRecognitionEventLike } from "@/lib/speech";
 import type { ChatMessage, Conversation } from "@/lib/types";
 
 type ChatViewProps = {
@@ -14,35 +15,10 @@ type ChatViewProps = {
   onModeChange?: (mode: string) => void;
 };
 
-type BrowserSpeechRecognition = {
-  lang: string;
-  continuous: boolean;
-  interimResults: boolean;
-  start: () => void;
-  stop: () => void;
-  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-  onerror: ((event: { error?: string }) => void) | null;
-  onend: (() => void) | null;
-};
-
-type SpeechRecognitionEventLike = {
-  resultIndex: number;
-  results: ArrayLike<{
-    isFinal: boolean;
-    0: { transcript: string };
-  }>;
-};
-
-type SpeechWindow = Window &
-  typeof globalThis & {
-    SpeechRecognition?: new () => BrowserSpeechRecognition;
-    webkitSpeechRecognition?: new () => BrowserSpeechRecognition;
-  };
-
 const modes = [
-  { id: "economic", label: "Econômico" },
+  { id: "economic", label: "Economico" },
   { id: "balanced", label: "Equilibrado" },
-  { id: "maximum", label: "Máximo" }
+  { id: "maximum", label: "Maximo" }
 ];
 
 export function ChatView({ token, initialMessage, initialMode = "balanced", onModeChange }: ChatViewProps) {
@@ -55,9 +31,12 @@ export function ChatView({ token, initialMessage, initialMode = "balanced", onMo
   const [loading, setLoading] = useState(false);
   const [meta, setMeta] = useState("Pronto para conversar.");
   const [listening, setListening] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const [voiceReplyEnabled, setVoiceReplyEnabled] = useState(true);
   const endRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const speakNextReplyRef = useRef(false);
 
   useEffect(() => {
     listConversations(token).then(setConversations).catch(() => setConversations([]));
@@ -75,6 +54,14 @@ export function ChatView({ token, initialMessage, initialMode = "balanced", onMo
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.abort?.();
+      recognitionRef.current?.stop();
+      window.speechSynthesis?.cancel();
+    };
+  }, []);
+
   const empty = useMemo(() => messages.length === 0, [messages.length]);
 
   async function openConversation(id: number) {
@@ -84,14 +71,14 @@ export function ChatView({ token, initialMessage, initialMode = "balanced", onMo
   }
 
   async function removeConversation(id: number) {
-    const confirmed = window.confirm("Excluir esta conversa? Essa ação remove o histórico local dela.");
+    const confirmed = window.confirm("Excluir esta conversa? Essa acao remove o historico local dela.");
     if (!confirmed) return;
     await deleteConversation(token, id);
     setConversations((current) => current.filter((conversation) => conversation.id !== id));
     if (conversationId === id) {
       setConversationId(null);
       setMessages([]);
-      setMeta("Conversa excluída.");
+      setMeta("Conversa excluida.");
     }
   }
 
@@ -156,68 +143,111 @@ export function ChatView({ token, initialMessage, initialMode = "balanced", onMo
         content: canvas.toDataURL("image/png")
       };
     } catch {
-      setMeta("Permissão de tela cancelada ou indisponível.");
+      setMeta("Permissao de tela cancelada ou indisponivel.");
       return null;
     }
   }
 
-  function toggleVoice() {
-    if (listening) {
-      recognitionRef.current?.stop();
-      setListening(false);
+  function stopVoiceListening(reason = "Microfone pausado.") {
+    recognitionRef.current?.abort?.();
+    recognitionRef.current?.stop();
+    recognitionRef.current = null;
+    setListening(false);
+    window.dispatchEvent(new CustomEvent("jake:indicator", { detail: { voice: false } }));
+    setMeta(reason);
+  }
+
+  async function speakReply(text: string) {
+    if (!voiceReplyEnabled || typeof window.speechSynthesis === "undefined") return;
+    window.speechSynthesis.cancel();
+    const utterance = await createPtBrUtterance(text);
+    utterance.onstart = () => {
+      setSpeaking(true);
+      window.dispatchEvent(new CustomEvent("jake:indicator", { detail: { voice: true } }));
+    };
+    utterance.onend = () => {
+      setSpeaking(false);
       window.dispatchEvent(new CustomEvent("jake:indicator", { detail: { voice: false } }));
-      setMeta("Microfone pausado.");
+    };
+    utterance.onerror = () => {
+      setSpeaking(false);
+      window.dispatchEvent(new CustomEvent("jake:indicator", { detail: { voice: false } }));
+    };
+    window.speechSynthesis.speak(utterance);
+  }
+
+  async function toggleVoice() {
+    if (listening) {
+      stopVoiceListening();
       return;
     }
 
-    const speechWindow = window as SpeechWindow;
-    const SpeechRecognition = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
+    const SpeechRecognition = getSpeechRecognitionCtor();
     if (!SpeechRecognition) {
-      setMeta("Seu navegador não liberou reconhecimento de voz. Use Chrome ou Edge.");
+      setMeta("Seu navegador nao liberou reconhecimento de voz. Use Chrome ou Edge.");
       return;
     }
 
+    try {
+      await ensureMicrophonePermission();
+    } catch (err) {
+      setMeta(err instanceof Error ? err.message : "Nao consegui liberar o microfone.");
+      return;
+    }
+
+    let finalText = "";
     const recognition = new SpeechRecognition();
     recognition.lang = "pt-BR";
     recognition.continuous = false;
     recognition.interimResults = true;
-    const baseText = message.trim();
     recognition.onresult = (event) => {
       let transcript = "";
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
         transcript += event.results[index][0].transcript;
+        if (event.results[index].isFinal) finalText += `${event.results[index][0].transcript} `;
       }
-      setMessage(`${baseText}${baseText && transcript ? " " : ""}${transcript}`.trimStart());
+      setMessage(transcript || finalText);
     };
     recognition.onerror = (event) => {
-      setListening(false);
-      window.dispatchEvent(new CustomEvent("jake:indicator", { detail: { voice: false } }));
-      setMeta(event.error ? `Erro no microfone: ${event.error}` : "Não consegui ouvir agora.");
+      stopVoiceListening(event.error ? `Erro no microfone: ${event.error}` : "Nao consegui ouvir agora.");
     };
     recognition.onend = () => {
+      recognitionRef.current = null;
       setListening(false);
       window.dispatchEvent(new CustomEvent("jake:indicator", { detail: { voice: false } }));
-      recognitionRef.current = null;
+      const spoken = finalText.trim();
+      if (spoken) {
+        setMessage(spoken);
+        speakNextReplyRef.current = true;
+        void submitPrompt(spoken, attachments);
+      }
     };
+
     recognitionRef.current = recognition;
     setListening(true);
-    window.dispatchEvent(new CustomEvent("jake:indicator", { detail: { voice: true } }));
     setMeta("Ouvindo... fale com o Jake.");
-    recognition.start();
+    window.dispatchEvent(new CustomEvent("jake:indicator", { detail: { voice: true } }));
+    try {
+      recognition.start();
+    } catch {
+      stopVoiceListening("Nao consegui iniciar o microfone. Verifique a permissao do navegador.");
+    }
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const trimmed = message.trim();
-    if ((!trimmed && attachments.length === 0) || loading) return;
+  async function submitPrompt(messageOverride?: string, attachmentsOverride?: ChatAttachment[]) {
+    const trimmed = (messageOverride ?? message).trim();
+    const currentAttachments = attachmentsOverride ?? attachments;
+    if ((!trimmed && currentAttachments.length === 0) || loading) return;
+
     setMessage("");
-    let outgoingAttachments = attachments;
+    let outgoingAttachments = currentAttachments;
     setAttachments([]);
     if (shouldAttachScreen(trimmed) && outgoingAttachments.length === 0) {
       setMeta("Escolha a tela para o Jake analisar...");
       const screen = await captureScreenAttachment();
       outgoingAttachments = screen ? [screen] : [];
     }
+
     const displayText = trimmed || "Analise os anexos.";
     const userMessage: ChatMessage = {
       id: `local-${Date.now()}`,
@@ -226,32 +256,32 @@ export function ChatView({ token, initialMessage, initialMode = "balanced", onMo
     };
     setMessages((current) => [...current, userMessage]);
     setLoading(true);
-    setMeta("Jake está pensando...");
+    setMeta("Jake esta pensando...");
     window.dispatchEvent(new CustomEvent("jake:indicator", { detail: { thinking: true } }));
     try {
       const result = await sendChat(token, displayText, mode, conversationId, outgoingAttachments);
       setConversationId(result.conversation_id);
-      setMessages((current) => [
-        ...current,
-        { id: `assistant-${Date.now()}`, role: "assistant", content: result.reply }
-      ]);
+      setMessages((current) => [...current, { id: `assistant-${Date.now()}`, role: "assistant", content: result.reply }]);
       setMeta(`${result.provider} · ${result.model} · ${result.usage.total_tokens} tokens`);
+      if (voiceReplyEnabled || speakNextReplyRef.current) speakReply(result.reply);
+      speakNextReplyRef.current = false;
       const updated = await listConversations(token);
       setConversations(updated);
     } catch (err) {
-      setMessages((current) => [
-        ...current,
-        {
-          id: `error-${Date.now()}`,
-          role: "assistant",
-          content: err instanceof Error ? err.message : "Não consegui responder agora."
-        }
-      ]);
+      const reply = err instanceof Error ? err.message : "Nao consegui responder agora.";
+      setMessages((current) => [...current, { id: `error-${Date.now()}`, role: "assistant", content: reply }]);
       setMeta("Erro ao conversar com a API.");
+      if (voiceReplyEnabled || speakNextReplyRef.current) speakReply(reply);
+      speakNextReplyRef.current = false;
     } finally {
       setLoading(false);
       window.dispatchEvent(new CustomEvent("jake:indicator", { detail: { thinking: false } }));
     }
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await submitPrompt();
   }
 
   return (
@@ -280,13 +310,13 @@ export function ChatView({ token, initialMessage, initialMode = "balanced", onMo
                 tabIndex={0}
                 onClick={(event) => {
                   event.stopPropagation();
-                  removeConversation(conversation.id);
+                  void removeConversation(conversation.id);
                 }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
                     event.stopPropagation();
-                    removeConversation(conversation.id);
+                    void removeConversation(conversation.id);
                   }
                 }}
                 className="mt-0.5 hidden h-7 w-7 shrink-0 items-center justify-center rounded text-muted hover:bg-red-50 hover:text-red-600 group-hover:flex dark:hover:bg-red-950"
@@ -305,21 +335,43 @@ export function ChatView({ token, initialMessage, initialMode = "balanced", onMo
             <h1 className="text-lg font-semibold">Chat com o Jake</h1>
             <p className="text-sm text-muted dark:text-stone-400">{meta}</p>
           </div>
-          <div className="flex rounded-panel border border-line bg-cream p-1 dark:border-stone-700 dark:bg-night">
-            {modes.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => {
-                  setMode(item.id);
-                  onModeChange?.(item.id);
-                }}
-                className={`rounded px-3 py-1.5 text-sm transition ${
-                  mode === item.id ? "bg-accent text-white" : "text-muted hover:text-ink dark:text-stone-300 dark:hover:text-white"
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setVoiceReplyEnabled((current) => {
+                  const next = !current;
+                  if (!next) {
+                    window.speechSynthesis?.cancel();
+                    setSpeaking(false);
+                  }
+                  return next;
+                });
+              }}
+              className={`flex h-9 items-center gap-2 rounded-panel border px-3 text-sm ${
+                voiceReplyEnabled ? "border-accent bg-accent-soft text-accent" : "border-line text-muted dark:border-stone-700 dark:text-stone-300"
+              }`}
+              title="Fala do Jake"
+            >
+              {voiceReplyEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+              Voz
+            </button>
+            <div className="flex rounded-panel border border-line bg-cream p-1 dark:border-stone-700 dark:bg-night">
+              {modes.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    setMode(item.id);
+                    onModeChange?.(item.id);
+                  }}
+                  className={`rounded px-3 py-1.5 text-sm transition ${
+                    mode === item.id ? "bg-accent text-white" : "text-muted hover:text-ink dark:text-stone-300 dark:hover:text-white"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -328,9 +380,9 @@ export function ChatView({ token, initialMessage, initialMode = "balanced", onMo
             <div className="grid h-full place-items-center text-center">
               <div className="max-w-lg">
                 <Sparkles className="mx-auto mb-4 h-8 w-8 text-accent" />
-                <h2 className="text-2xl font-semibold">Peça qualquer coisa prática</h2>
+                <h2 className="text-2xl font-semibold">Peca qualquer coisa pratica</h2>
                 <p className="mt-3 text-sm leading-6 text-muted dark:text-stone-400">
-                  Experimente “Jake, gastei 25 reais com lanche”, “pesquise o próximo jogo do Galo” ou “o que você vê na minha tela?”.
+                  Experimente "Jake, gastei 25 reais com lanche", "pesquise o proximo jogo do Galo" ou "o que voce ve na minha tela?".
                 </p>
               </div>
             </div>
@@ -365,9 +417,10 @@ export function ChatView({ token, initialMessage, initialMode = "balanced", onMo
           {loading ? (
             <div className="flex items-center gap-2 text-sm text-muted dark:text-stone-400">
               <Loader2 className="h-4 w-4 animate-spin text-accent" />
-              Jake está organizando a resposta
+              Jake esta organizando a resposta
             </div>
           ) : null}
+          {speaking ? <div className="text-xs text-accent">Jake esta falando...</div> : null}
           <div ref={endRef} />
         </div>
 
@@ -391,7 +444,7 @@ export function ChatView({ token, initialMessage, initialMode = "balanced", onMo
             </div>
           ) : null}
           <div className="flex min-h-14 items-end gap-2 rounded-panel border border-line bg-cream p-2 dark:border-stone-700 dark:bg-night">
-            <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(event) => readFiles(event.target.files)} />
+            <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(event) => void readFiles(event.target.files)} />
             <button type="button" onClick={() => fileInputRef.current?.click()} className="flex h-10 w-10 items-center justify-center rounded-panel text-muted hover:text-accent" title="Anexar arquivo">
               <Paperclip className="h-4 w-4" />
             </button>
@@ -459,5 +512,5 @@ function isReadableTextFile(file: File): boolean {
 
 function shouldAttachScreen(message: string): boolean {
   const normalized = message.toLowerCase();
-  return normalized.includes("minha tela") || normalized.includes("vê na tela") || normalized.includes("ve na tela") || normalized.includes("print");
+  return normalized.includes("minha tela") || normalized.includes("ve na tela") || normalized.includes("veja a tela") || normalized.includes("print");
 }
