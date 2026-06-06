@@ -1,3 +1,5 @@
+Joao Vianna
+
 # Jake IA
 
 Jake e uma central pessoal com IA para chat, memoria, projetos, controle financeiro,
