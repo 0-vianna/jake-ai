@@ -19,24 +19,11 @@ Para abrir como aplicativo de computador:
 start_jake_desktop.bat
 ```
 
-Conta admin local:
-
-- Usuario: `jprvianna`
-- Senha: `Joao@Jake2026`
-
 ## Stack
 
 - Frontend: Next.js, React, TypeScript, Tailwind, Framer Motion, Recharts e Lucide.
 - Backend: FastAPI, SQLAlchemy, SQLite, JWT, OpenAI SDK, httpx e BeautifulSoup.
 - Desktop: Electron apontando para o app local.
-
-## OpenAI
-
-O backend le a chave em `.env`:
-
-```env
-OPENAI_API_KEY=sua-chave-aqui
-```
 
 Modelos padrao:
 
